@@ -1,0 +1,29 @@
+
+train:
+  name: TestNetworkBench
+  load_network: False
+  phase_test: False
+  load_epoch: 0
+  shuffle: True
+  input_nc: 3
+  output_nc: 1
+  n_blocks: 5
+  n_networks: 2
+  initial_filters: 96
+  dropout_value: 0
+  lr: 0.001
+  decay: 0.001
+  decay_epochs: 150
+  batch_size: 1
+  image_width: 1920
+  image_height: 1280
+  gen_label: None
+  dataroot: [/home/temp/schock/MGS/Test/set1, /home/temp/schock/MGS/Test/set2]
+  output_path: /home/temp/schock/MGS/Test/Outputs
+  model_path: /home/temp/schock/MGS/Test/Models
+  test_path: [/home/temp/schock/MGS/Test/set2, /home/temp/schock/MGS/Test/set1]
+  n_epochs: 50
+  steps_per_epoch: 50
+  print_freq: 10
+  save_freq: 1
+  save_img_freq: 1
