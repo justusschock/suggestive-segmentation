@@ -6,10 +6,11 @@ from matplotlib import pyplot as plt
 from network import NetworkBench
 from image_handler import ImageHandler
 import os
+import numpy as np
 
 import time
 
-from correspondence_data_loader import CorrespondenceDataLoader
+from correspondence_data_loader import CorrespondenceDataLoader, CorrespondenceDataLoaderDontCare
 
 
 class SegmentationNetwork(object):
@@ -32,11 +33,19 @@ class SegmentationNetwork(object):
                                   load_epoch=options.load_epoch,
                                   model_path=os.path.join(options.model_path, options.name),
                                   name=options.name,
-                                  gpu_ids=gpu_ids)
+                                  gpu_ids=gpu_ids,
+                                  dont_care=options.dont_care,
+                                  gan=options.gan,
+                                  pool_size=options.pool_size,
+                                  lambda_gan=options.lambda_gan,
+                                  n_blocks_discr=options.n_blocks_discr)
 
         self.model.cuda()
 
-        self.data_sets = CorrespondenceDataLoader(options).load_data()
+        self.dont_care = options.dont_care
+        self.gan = options.gan
+
+        self.data_sets = CorrespondenceDataLoaderDontCare(options).load_data()
         self.image_handler = ImageHandler()
         self.loss_dir = self.options.output_path + "/" + self.options.name + "/Train"
         copyfile(os.path.relpath('seg_config.yaml'), os.path.join(self.options.model_path, self.options.name, 'seg_config.yaml'))
@@ -76,13 +85,18 @@ class SegmentationNetwork(object):
             for i in range(len(self.data_sets[0])):
                 iter_start_time = time.time()
 
-                current_batch_imgs, current_batch_labels = [], []
+                current_batch_imgs, current_batch_labels, dont_care_masks = [], [], []
 
                 for iterator in data_iters:
-                    current_batch_imgs.append(iterator.__next__()['img'])
-                    current_batch_labels.append(iterator.__next__()['label'])
+                    data = iterator.__next__()
+                    current_batch_imgs.append(data['img'])
+                    current_batch_labels.append(data['label'])
+                    if self.dont_care:
+                        dont_care_masks.append(data['dont_care'])
+                    else:
+                        dont_care_masks = None
 
-                self.model.set_inputs(current_batch_imgs, current_batch_labels)
+                self.model.set_inputs(current_batch_imgs, current_batch_labels, dont_care_masks)
 
                 self.model.optimize()
 
@@ -92,7 +106,7 @@ class SegmentationNetwork(object):
 
                     message = '(epoch: %d, step: %d, time/step: %.3f) ' % (epoch, steps + 1, t)
                     for k, v in errors.items():
-                        message += '%s: %.3f, ' % (k, v)
+                        message += '%s: %.3f, ' % (k, float(v))
 
                     if not os.path.isdir(str(self.loss_dir)):
                         os.makedirs(str(self.loss_dir))
@@ -113,7 +127,7 @@ class SegmentationNetwork(object):
                 # self.model.predict()
                 output_dir = self.options.output_path + "/" + self.options.name + "/Train/images"
                 img_list = self.model.get_current_imgs()
-                for idx,images in enumerate(img_list):
+                for idx, images in enumerate(img_list):
                     self.image_handler.save_image(images['img'], output_dir, 'epoch_%03d_real_img_model_%d' % (epoch, idx))
                     self.image_handler.save_mask(images['mask'], output_dir, 'epoch_%03d_fake_mask_model_%d' % (epoch, idx))
                     self.image_handler.save_mask(images['gt'], output_dir, 'epoch_%03d_gt_model_%d' % (epoch, idx))
@@ -127,7 +141,7 @@ class SegmentationNetwork(object):
             if epoch > self.options.n_epochs:
                 self.model.update_learning_rate()
 
-    def predict(self, n_predicts=0):
+    def predict_to_dir(self, n_predicts=0):
         """
         Function to predict Images from Dataroot to a subfolder of output_path
         :param n_predicts: number of Images to predict, set 0 to predict all images
@@ -136,10 +150,10 @@ class SegmentationNetwork(object):
 
         print("Started Prediction")
         if not n_predicts:
-            n_predicts = len(self.data_set)
+            n_predicts = max([len(dataset) for dataset in self.data_sets])
 
-        for i, data in enumerate(self.data_set):
-            self.model.set_input(data['img'])
+        for i, data in enumerate(self.data_sets[0]):
+            self.model.set_inputs([data['img'] for x in range(self.options.n_networks)])
             predicted_mask = self.model.predict()
 
             # FIXME: data['path_img'] gives list of strings instead of string
@@ -155,6 +169,65 @@ class SegmentationNetwork(object):
                 break
 
         print("Finished Prediction")
+
+    def predict(self, n_predicts=0):
+
+        print("Started Prediction")
+
+        predictions = []
+        save_names = []
+
+        if not n_predicts:
+            n_predicts = max([len(dataset) for dataset in self.data_sets])
+
+        for i, data in enumerate(self.data_sets[0]):
+            self.model.set_inputs([data['img'] for x in range(self.options.n_networks)])
+            predicted_mask = self.model.predict()
+            save_name = (os.path.split(data['path_img'][0])[-1]).rsplit('.', 1)[0] + '_pred'
+            save_names.append(save_name)
+
+            predictions.append(predicted_mask)
+
+            if ((i + 1) % 10) == 0:
+                print("Predicted %d of %d Images" % (i+1, n_predicts))
+
+            if (i + 1) >= n_predicts:
+                break
+
+        print("Finished Prediction")
+        return predictions, save_names
+
+    def get_annotation_suggestions(self, n_predicts=0, n_samples=100):
+
+        n_digits = len(repr(abs(n_samples)))
+
+        predictions, save_names = self.predict(n_predicts=n_predicts)
+
+        images = [[ImageHandler._tensor_to_image(img, mask=True) for img in imgs] for imgs in predictions]
+        # sum_images = np.sum(images, axis=0)
+        result_imgs = []
+        for imgs in images:
+            result_and = np.zeros_like(imgs[0])
+            result_or = np.zeros_like(imgs[0])
+            for img in imgs:
+                result_and = np.logical_and(img, result_and)
+                result_or = np.logical_or(img, result_or)
+
+            result_imgs.append(result_or - result_and)
+
+        uncertainties = []
+        for idx, res_img in result_imgs:
+            uncertainties.append((np.sum(res_img), idx))
+
+        uncertainties.sort(key=lambda tup: tup[0], reverse=True)
+
+        if n_samples < len(uncertainties):
+            n_samples = len(uncertainties)
+
+        output_dir = self.options.output_path + "/" + self.options.name + "/Suggest/" + "Epoch_" + str(self.options.load_epoch)
+
+        for i in range(n_samples):
+            self.image_handler.save_image(result_imgs[uncertainties[i][1]], output_dir, save_names[uncertainties[i][1]])
 
     @staticmethod
     def erase_loss_file(loss_file, initial_epoch):
@@ -239,7 +312,10 @@ class SegmentationNetwork(object):
         fig_losses_epochs = plt.figure(2, figsize=(48, 27))
 
         figures = [fig_losses_steps, fig_losses_epochs]
-        loss_labels = ["Loss Seg"]
+        loss_labels = []
+        for key, _ in self.model.get_current_errors().items():
+            loss_labels.append("Loss " + str(key))
+        # loss_labels = ["Loss Seg"]
 
         loss_list = [seg_losses]
 

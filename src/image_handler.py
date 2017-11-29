@@ -131,14 +131,14 @@ class ImageHandler(object):
         self.html_viewer.save(title + ".html", web_dir)
 
     @staticmethod
-    def _tensor_to_image(tensor, test=False):
+    def _tensor_to_image(tensor, mask=False):
         """
         Converting pytorch-tensor to numpy-array
         :param tensor: pytorch tensor
         :return: img: numpy array with tensor data
         """
         numpy_image = tensor.data[0].cpu().float().numpy()
-        if test:
+        if mask:
             img = (np.transpose(numpy_image, (1, 2, 0))) * 255.0
         else:
             img = (np.transpose(numpy_image, (1, 2, 0)) + 1) / 2 * 255.0
@@ -185,10 +185,8 @@ class ImageHandler(object):
         extension = str(extension) if str(extension).startswith('.') else '.' + str(extension)
         save_path = image_path + "/" + name + extension
 
-        img = ImageHandler._tensor_to_image(image, test=True)
-
+        img = ImageHandler._tensor_to_image(image, mask=True)
         img = img.astype(np.uint8)
-
         img = img[:, 1:-1, :]
 
         img = Image.fromarray(np.squeeze(img)).convert('RGB')

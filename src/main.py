@@ -1,7 +1,7 @@
 import os
 import sys
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 import matplotlib
 matplotlib.use('Agg')
@@ -27,3 +27,5 @@ if __name__ == '__main__':
         model.predict(0)
     else:
         model.train()
+        model.predict_to_dir(0)
+        model.get_annotation_suggestions(n_samples=10)

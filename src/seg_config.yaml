@@ -1,6 +1,6 @@
 
 train:
-  name: TestNetworkBench
+  name: TestDontCareWorkingGAN_128_filters_quarter_size_5_blocks_gen_4_blocks_discr_single_output_map
   load_network: False
   phase_test: False
   load_epoch: 0
@@ -8,22 +8,26 @@ train:
   input_nc: 3
   output_nc: 1
   n_blocks: 5
-  n_networks: 2
-  initial_filters: 96
+  n_networks: 1
+  initial_filters: 128
   dropout_value: 0
-  lr: 0.001
+  dont_care: True
+  lr: 0.01
   decay: 0.001
-  decay_epochs: 150
+  decay_epochs: 100
   batch_size: 1
-  image_width: 1920
-  image_height: 1280
-  gen_label: None
-  dataroot: [/home/temp/schock/MGS/Test/set1, /home/temp/schock/MGS/Test/set2]
+  image_width: 480
+  image_height: 320
+  gan: True
+  pool_size: 50
+  lambda_gan: 1
+  n_blocks_discr: 4
+  dataroot: [/home/temp/schock/MGS/Test/whole_dont_care]
   output_path: /home/temp/schock/MGS/Test/Outputs
   model_path: /home/temp/schock/MGS/Test/Models
-  test_path: [/home/temp/schock/MGS/Test/set2, /home/temp/schock/MGS/Test/set1]
-  n_epochs: 50
-  steps_per_epoch: 50
-  print_freq: 10
+  test_path: [/home/temp/schock/MGS/Test/whole_dont_care]
+  n_epochs: 150
+  steps_per_epoch: 2500
+  print_freq: 500
   save_freq: 1
   save_img_freq: 1

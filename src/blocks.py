@@ -217,5 +217,39 @@ class UnetSkipConnectionInceptionBlock(BaseBlock):
         return up
 
 
+class DiscriminatorBlock(BaseBlock):
+    def __init__(self, input_nc, dropout_value, n_filters, kernel_size, strides):
+        super(DiscriminatorBlock, self).__init__(input_nc, dropout_value)
+        self.kernel_size = kernel_size
+        self.n_filters = n_filters
+        self.strides = strides
+        # _padding_size = (input_img_size*strides - strides - input_img_size + kernel_size)/2
+        _padding_size = (kernel_size - 1) / 2
+        self.input_padding = int(_padding_size)
+        # if _padding_size % 2 != 0:
+        #     self.output_padding = (1, 0)
+        # else:
+        #     self.output_padding = 0
+
+        self._build()
+
+    def _build(self):
+        model = [torch.nn.Conv2d(self.outer_nc, self.n_filters, self.kernel_size, self.strides, self.input_padding),
+                 # torch.nn.ZeroPad2d(self.output_padding),
+                 torch.nn.BatchNorm2d(self.n_filters),
+                 torch.nn.ReLU(),
+                 torch.nn.Conv2d(self.n_filters, self.n_filters, self.kernel_size, padding=self.input_padding),
+                 # torch.nn.ZeroPad2d(self.output_padding),
+                 torch.nn.BatchNorm2d(self.n_filters),
+                 torch.nn.ReLU(),
+                 torch.nn.Dropout(self.dropout_value),
+                 torch.nn.MaxPool2d(self.strides)
+                 ]
+        self.model = torch.nn.Sequential(*model)
+
+    def forward(self, input_tensor):
+        return self.model(input_tensor)
+
+
 InceptionBlockTranspose = InceptionTransposeBlockB
 

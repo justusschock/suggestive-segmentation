@@ -63,13 +63,14 @@ class ImageDiscriminator(torch.nn.Module):
 
 
 class ImageDiscriminatorConv(torch.nn.Module):
-    def __init__(self, input_nc=1, initial_filters=4, dropout_value=0.25, strides=2, gpu_ids=[]):
+    def __init__(self, input_nc=1, initial_filters=64, dropout_value=0.25, n_blocks=4, gpu_ids=[]):
         super(ImageDiscriminatorConv, self).__init__()
         self.input_nc = input_nc
         self.initial_filters = initial_filters
         self.dropout_value = dropout_value
 
-        self.strides = strides
+        self.strides = 2
+        self.n_blocks = n_blocks
 
         self.gpu_ids = gpu_ids
         self._build()
@@ -83,11 +84,12 @@ class ImageDiscriminatorConv(torch.nn.Module):
         filters = 2 * self.initial_filters
 
         i = 2
-        while i <= 8:
-            i *= 2
+        for idx in range(2, self.n_blocks):
             filters_old = filters
-            filters = max(i*self.initial_filters, 1024)
+            filters = max(2*filters, 512)
             model += [DiscriminatorBlock(filters_old, self.dropout_value, filters, 3, self.strides)]
+
+        model += [torch.nn.Conv2d(filters, 1, 3, self.strides, 1)]
 
         self.model = torch.nn.Sequential(*model)
 
