@@ -1,4 +1,3 @@
-
 train:
   name: TestDontCareWorkingGAN_128_filters_quarter_size_5_blocks_gen_4_blocks_discr_single_output_map
   load_network: False
