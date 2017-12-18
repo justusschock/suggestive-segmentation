@@ -2,6 +2,38 @@ import torch
 from torch.nn import NLLLoss2d
 
 
+class FBetaScore(torch.nn.Module):
+    def __init__(self, beta, threshold=0.5, eps=1e-9):
+        super(FBetaScore, self).__init__()
+        self.beta = beta
+        self.threshold = threshold
+        self.eps = eps
+
+    def forward(self, prediction, target):
+        beta2 = self.beta**2
+
+        y_pred = torch.ge(prediction.float(), self.threshold).float()
+        y_true = target.float()
+
+        true_positive = (y_pred * y_true).sum(dim=1)
+        precision = true_positive.div(y_pred.sum(dim=1).add(self.eps))
+        recall = true_positive.div(y_true.sum(dim=1).add(self.eps))
+
+        return torch.mean((precision*recall).div(precision.mul(beta2) + recall + self.eps).mul(1 + beta2))
+
+
+class FBetaLoss(torch.nn.Module):
+    def __init__(self, beta, threshold=0.5, eps=1e-9):
+        super(FBetaLoss, self).__init__()
+        self.beta = beta
+        self.threshold = threshold
+        self.eps = eps
+        self.score_calc = FBetaScore(beta, threshold, eps)
+
+    def forward(self, prediction, target):
+        return 1-self.score_calc(prediction, target)
+
+
 class SelectiveCrossEntropyLoss(torch.nn.Module):
     def __init__(self):
         super(SelectiveCrossEntropyLoss, self).__init__()
@@ -79,9 +111,9 @@ class CrossEntropyLoss2d(torch.nn.Module):
 
 
 # FIXME: not stable yet
-class DiceLoss(torch.nn.Module):
+class DiceLoss_old(torch.nn.Module):
     def __init__(self, smooth_const=1e-4):
-        super(DiceLoss, self).__init__()
+        super(DiceLoss_old, self).__init__()
         self.smooth_const = smooth_const
 
     def forward(self, input_var, target_var):

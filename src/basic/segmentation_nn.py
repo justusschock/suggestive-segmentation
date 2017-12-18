@@ -104,9 +104,9 @@ class SegmentationNetwork(object):
                     errors = self.model.get_current_errors()
                     t = (time.time() - iter_start_time)
 
-                    message = '(epoch: %d, step: %d, time/step: %.3f) ' % (epoch, steps + 1, t)
+                    message = '(epoch: %d, step: %d, time/step: %.3f)\n' % (epoch, steps + 1, t)
                     for k, v in errors.items():
-                        message += '%s: %.3f, ' % (k, float(v))
+                        message += '%s:%.3f' % (k, float(v))
 
                     if not os.path.isdir(str(self.loss_dir)):
                         os.makedirs(str(self.loss_dir))
@@ -115,6 +115,7 @@ class SegmentationNetwork(object):
                         f.write(message + "\n")
 
                     print(message)
+                    # self.plot_losses(loss_file)
 
                 steps += 1
                 if steps >= self.options.steps_per_epoch:
@@ -157,10 +158,11 @@ class SegmentationNetwork(object):
             predicted_mask = self.model.predict()
 
             # FIXME: data['path_img'] gives list of strings instead of string
-            save_name = (os.path.split(data['path_img'][0])[-1]).rsplit('.', 1)[0] + '_pred'
+            save_name = (os.path.split(data['path_img'][0])[-1]).rsplit('.', 1)[0]
 
             output_dir = self.options.output_path + "/" + self.options.name + "/Predict/" + "Epoch_" + str(self.options.load_epoch)
-            self.image_handler.save_mask(predicted_mask, output_dir, save_name)
+            self.image_handler.save_mask(predicted_mask[0], output_dir, save_name + '_pred')
+            self.image_handler.save_image(self.model.get_current_imgs()[0]['img'], output_dir, save_name)
 
             if ((i + 1) % 10) == 0:
                 print("Predicted %d of %d Images" % (i+1, n_predicts))

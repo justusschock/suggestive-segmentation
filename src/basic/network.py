@@ -144,10 +144,10 @@ class Network(torch.nn.Module):
 
         if self.dont_care_mask is not None:
             weights = 1 - self.dont_care_mask
+            self.loss_seg = self.criterion_seg(self.fake_mask, self.var_gt, weights)
         else:
-            weights = None
+            self.loss_seg = self.criterion_seg(self.fake_mask, self.var_gt)
 
-        self.loss_seg = self.criterion_seg(self.fake_mask, self.var_gt, weights)
         self.loss_g = self.loss_seg
 
         if self.gan:
@@ -324,7 +324,7 @@ class NetworkBench(torch.nn.Module):
             model.forward(vol=vol)
 
     def predict(self):
-        return [model.predict for model in self.models]
+        return [model.predict() for model in self.models]
 
     def backward(self):
         for model in self.models:

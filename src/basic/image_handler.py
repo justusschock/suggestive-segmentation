@@ -163,8 +163,6 @@ class ImageHandler(object):
         img = ImageHandler._tensor_to_image(image)
         img = img.astype(np.uint8)
 
-        img = img[:, 1:-1, :]
-
         img = Image.fromarray(np.squeeze(img)).convert('RGB')
 
         img.save(save_path)
@@ -187,7 +185,6 @@ class ImageHandler(object):
 
         img = ImageHandler._tensor_to_image(image, mask=True)
         img = img.astype(np.uint8)
-        img = img[:, 1:-1, :]
 
         img = Image.fromarray(np.squeeze(img)).convert('RGB')
 
