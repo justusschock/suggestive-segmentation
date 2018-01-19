@@ -4,17 +4,17 @@ import torch
 import os
 import numpy as np
 
-from u_net import uNet
+from u_net import UNet, UNetV2
 from discriminator import ImageDiscriminatorConv, ImageDiscriminator
 from image_pool import ImagePool
 
-from losses import GANLoss, BinarySelectiveCrossEntropyLoss
+from losses import GANLoss, BCELoss2d
 
 
 class Network(torch.nn.Module):
     def __init__(self, n_input_channels=3, n_output_channels=1, n_blocks=9, initial_filters=64, dropout_value=0.25,
                  lr=1e-3, decay=0, decay_epochs=0, batch_size=1, image_width=640, image_height=640,
-                 load_network=False, load_epoch=0, model_path='', name='', gpu_ids=[], dont_care=False, gan=False,
+                 load_network=False, load_epoch=0, model_path='', name='', gpu_ids=[], gan=False,
                  pool_size=50, lambda_gan=1, n_blocks_discr=3):
         super(Network, self).__init__()
         self.input_nc = n_input_channels
@@ -39,7 +39,6 @@ class Network(torch.nn.Module):
         self.var_img = None
         self.var_gt = None
         self.fake_mask = None
-        self.dont_care_mask = None
 
         self.criterion_seg = None
         self.criterion_gan = None
@@ -52,7 +51,6 @@ class Network(torch.nn.Module):
         self.loss_g = None
         self.loss_g_gan = None
         self.loss_d_gan = None
-        self.dont_care = dont_care
         self.gan = gan
         self.pool_size = pool_size
         self.lambda_gan = lambda_gan
@@ -68,20 +66,18 @@ class Network(torch.nn.Module):
             self.tensor = torch.FloatTensor
 
         self.initialize(n_input_channels, n_output_channels, n_blocks, initial_filters, dropout_value,
-                        lr, batch_size, image_width, image_height, gpu_ids, dont_care, gan, pool_size, n_blocks_discr)
+                        lr, batch_size, image_width, image_height, gpu_ids, gan, pool_size, n_blocks_discr)
 
     def cuda(self):
         self.generator.cuda()
 
     def initialize(self, n_input_channels, n_output_channels, n_blocks, initial_filters, dropout_value,
-                   lr,  batch_size, image_width, image_height,  gpu_ids, dont_care, gan, pool_size, n_blocks_discr):
+                   lr,  batch_size, image_width, image_height,  gpu_ids, gan, pool_size, n_blocks_discr):
 
         self.input_img = self.tensor(batch_size, n_input_channels, image_height, image_width)
         self.input_gt = self.tensor(batch_size, n_output_channels, image_height, image_width)
-        if dont_care:
-            self.dont_care_mask = self.tensor(batch_size, n_output_channels, image_height, image_width)
 
-        self.generator = uNet(n_input_channels, n_output_channels, n_blocks, initial_filters, dropout_value, gpu_ids)
+        self.generator = UNet(n_input_channels, n_output_channels, n_blocks, initial_filters, dropout_value, gpu_ids)
 
         if gan:
             self.discriminator = ImageDiscriminatorConv(n_output_channels, initial_filters, dropout_value,
@@ -95,7 +91,7 @@ class Network(torch.nn.Module):
             if gan:
                 self._load_network(self.discriminator, 'Discriminator', self.load_epoch)
 
-        self.criterion_seg = BinarySelectiveCrossEntropyLoss()
+        self.criterion_seg = BCELoss2d()
         self.optimizer_seg = torch.optim.Adam(self.generator.parameters(), lr=lr, betas=(0.5, 0.999))
 
         print('---------- Network initialized -------------')
@@ -104,16 +100,13 @@ class Network(torch.nn.Module):
             self.print_network(self.discriminator)
         print('-----------------------------------------------')
 
-    def set_input(self, input_img, input_gt=None, dont_care_mask=None):
+    def set_input(self, input_img, input_gt=None):
 
         if input_img is not None:
             self.input_img.resize_(input_img.size()).copy_(input_img)
 
         if input_gt is not None:
             self.input_gt.resize_(input_gt.size()).copy_(input_gt)
-
-        if dont_care_mask is not None:
-            self.dont_care_mask.resize_(dont_care_mask.size()).copy_(dont_care_mask)
 
     def forward(self, vol=False):
         """
@@ -142,11 +135,7 @@ class Network(torch.nn.Module):
     def backward_seg(self):
         self.fake_mask = self.generator.forward(self.var_img)
 
-        if self.dont_care_mask is not None:
-            weights = 1 - self.dont_care_mask
-            self.loss_seg = self.criterion_seg(self.fake_mask, self.var_gt, weights)
-        else:
-            self.loss_seg = self.criterion_seg(self.fake_mask, self.var_gt)
+        self.loss_seg = self.criterion_seg(self.fake_mask, self.var_gt)
 
         self.loss_g = self.loss_seg
 
@@ -280,7 +269,7 @@ class NetworkBench(torch.nn.Module):
 
     def __init__(self, n_networks=5, n_input_channels=3, n_output_channels=1, n_blocks=9, initial_filters=64, dropout_value=0.25,
                  lr=1e-3, decay=0, decay_epochs=0, batch_size=1, image_width=640, image_height=640,
-                 load_network=False, load_epoch=0, model_path='', name='', gpu_ids=[], dont_care=False, gan=False,
+                 load_network=False, load_epoch=0, model_path='', name='', gpu_ids=[], gan=False,
                  pool_size=50, lambda_gan=1, n_blocks_discr=4):
         self.models = []
         self.gan = gan
@@ -288,36 +277,25 @@ class NetworkBench(torch.nn.Module):
         for i in range(n_networks):
             self.models.append(Network(n_input_channels, n_output_channels, n_blocks, initial_filters, dropout_value,
                                        lr, decay, decay_epochs, batch_size, image_width, image_height,
-                                       load_network, load_epoch, model_path, name + "_%d" % i, gpu_ids, dont_care, gan,
+                                       load_network, load_epoch, model_path, name + "_%d" % i, gpu_ids, gan,
                                        pool_size, lambda_gan, n_blocks_discr))
 
     def cuda(self):
         for model in self.models:
             model.cuda()
 
-    def set_inputs(self, input_imgs, input_gts=None, dont_care_masks=None):
+    def set_inputs(self, input_imgs, input_gts=None):
         assert len(input_imgs) == self.n_networks
 
         if input_gts is not None:
             assert len(input_gts) == self.n_networks
 
-            if dont_care_masks is not None:
-                assert len(dont_care_masks) == self.n_networks
-
-                for idx, data in enumerate(list(zip(input_imgs, input_gts, dont_care_masks))):
-                    self.models[idx].set_input(data[0], data[1], data[2])
-            else:
-                for idx, data in enumerate(list(zip(input_imgs, input_gts))):
-                    self.models[idx].set_input(data[0], data[1], None)
+            for idx, data in enumerate(list(zip(input_imgs, input_gts))):
+                self.models[idx].set_input(data[0], data[1])
 
         else:
-            if dont_care_masks is not None:
-                assert len(dont_care_masks) == self.n_networks
-                for idx, data in enumerate(list(zip(input_imgs, dont_care_masks))):
-                    self.models[idx].set_input(data[0], None, data[1])
-            else:
-                for idx, img in enumerate(input_imgs):
-                    self.models[idx].set_input(img, None, None)
+            for idx, img in enumerate(input_imgs):
+                self.models[idx].set_input(img, None)
 
     def forward(self, vol=False):
         for model in self.models:

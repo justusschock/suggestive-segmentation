@@ -1,5 +1,5 @@
 train:
-  name: UNET_Ears_480_5_block_gen_3_block_total_segmented_augmented
+  name: UNETMulti_Label
   load_network: False
   phase_test: False
   load_epoch: 0
@@ -10,7 +10,7 @@ train:
   n_networks: 1
   initial_filters: 96
   dropout_value: 0
-  dont_care: False
+  n_labels: 3
   lr: 0.001
   decay: 0.001
   decay_epochs: 50
@@ -21,11 +21,11 @@ train:
   pool_size: 50
   lambda_gan: 1
   n_blocks_discr: 3
-  dataroot: [/home/temp/schock/MGS/Ears/Total_Segmented_Augmented]
+  dataroot: [/home/temp/schock/MGS/Subsets/Combined_Predictions]
   output_path: /home/temp/schock/MGS/Suggestive_Segmentation/Outputs
   model_path: /home/temp/schock/MGS/Suggestive_Segmentation/Models
   test_path: /home/temp/schock/MGS/Subsets/50Pixels_v3/Subset_3
-  n_epochs: 0
+  n_epochs: 100
   steps_per_epoch: 5000
   print_freq: 1000
   save_freq: 1

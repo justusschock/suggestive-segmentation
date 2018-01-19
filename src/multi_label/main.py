@@ -1,7 +1,7 @@
 import os
 import sys
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '4'
 
 import matplotlib
 matplotlib.use('Agg')
@@ -23,8 +23,5 @@ if __name__ == '__main__':
 
     model = SegmentationNetwork(options=options, gpu_ids=gpu_ids)
 
-    if options.phase_test:
-        model.predict_to_dir(n_predicts=0)
-    else:
-        model.train()
-        model.predict_to_dir(0)
+    model.train()
+    model.predict_to_dir(0)

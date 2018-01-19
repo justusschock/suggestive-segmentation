@@ -10,7 +10,9 @@ import numpy as np
 
 import time
 
-from correspondence_data_loader import CorrespondenceDataLoader, CorrespondenceDataLoaderDontCare
+from correspondence_data_loader import CorrespondenceDataLoader, CorrespondenceDataLoaderMultiLabel
+
+from tensorboardX import Summarywriter
 
 
 class SegmentationNetwork(object):
@@ -19,7 +21,7 @@ class SegmentationNetwork(object):
         self.options = options
         self.model = NetworkBench(n_networks=options.n_networks,
                                   n_input_channels=options.input_nc,
-                                  n_output_channels=options.output_nc,
+                                  n_output_channels=options.output_nc*options.n_labels,
                                   n_blocks=options.n_blocks,
                                   initial_filters=options.initial_filters,
                                   dropout_value=options.dropout_value,
@@ -34,21 +36,23 @@ class SegmentationNetwork(object):
                                   model_path=os.path.join(options.model_path, options.name),
                                   name=options.name,
                                   gpu_ids=gpu_ids,
-                                  dont_care=options.dont_care,
                                   gan=options.gan,
                                   pool_size=options.pool_size,
                                   lambda_gan=options.lambda_gan,
                                   n_blocks_discr=options.n_blocks_discr)
 
-        self.model.cuda()
+        # FIXME: Save Graph to tensorboardX
 
-        self.dont_care = options.dont_care
+        self.model.cuda()
+        self.n_labels = options.n_labels
         self.gan = options.gan
 
-        self.data_sets = CorrespondenceDataLoaderDontCare(options).load_data()
+        self.data_sets = CorrespondenceDataLoaderMultiLabel(options).load_data()
+
         self.image_handler = ImageHandler()
-        self.loss_dir = self.options.output_path + "/" + self.options.name + "/Train"
+        self.log_dir = self.options.output_path + "/" + self.options.name + "/Train"
         copyfile(os.path.relpath('seg_config.yaml'), os.path.join(self.options.model_path, self.options.name, 'seg_config.yaml'))
+        self.writer = Summarywriter(self.log_dir)
 
     def train(self):
         """
@@ -85,18 +89,14 @@ class SegmentationNetwork(object):
             for i in range(len(self.data_sets[0])):
                 iter_start_time = time.time()
 
-                current_batch_imgs, current_batch_labels, dont_care_masks = [], [], []
+                current_batch_imgs, current_batch_labels = [], []
 
                 for iterator in data_iters:
                     data = iterator.__next__()
                     current_batch_imgs.append(data['img'])
                     current_batch_labels.append(data['label'])
-                    if self.dont_care:
-                        dont_care_masks.append(data['dont_care'])
-                    else:
-                        dont_care_masks = None
 
-                self.model.set_inputs(current_batch_imgs, current_batch_labels, dont_care_masks)
+                self.model.set_inputs(current_batch_imgs, current_batch_labels)
 
                 self.model.optimize()
 
@@ -106,13 +106,13 @@ class SegmentationNetwork(object):
 
                     message = '(epoch: %d, step: %d, time/step: %.3f)\n' % (epoch, steps + 1, t)
                     for k, v in errors.items():
-                        message += '%s:%.3f' % (k, float(v))
+                        message += '%s: %.3f, ' % (k, float(v))
 
-                    if not os.path.isdir(str(self.loss_dir)):
-                        os.makedirs(str(self.loss_dir))
+                    if not os.path.isdir(str(self.log_dir)):
+                        os.makedirs(str(self.log_dir))
 
-                    with open(loss_file, 'a+') as f:
-                        f.write(message + "\n")
+                    for k, v in errors.items():
+                        self.writer.add_scalar('data/%s' % k, float(v), (epoch-1)*self.options.steps_per_epoch + steps)
 
                     print(message)
                     # self.plot_losses(loss_file)
@@ -124,6 +124,7 @@ class SegmentationNetwork(object):
             print('End of epoch %d / %d \t Time Taken: %d sec' %
                   (epoch, self.options.n_epochs + self.options.decay_epochs, time.time() - epoch_start_time))
 
+            # FIXME: Save Images with tensorboardX instead of image_handler
             if epoch % self.options.save_img_freq == 0:
                 # self.model.predict()
                 output_dir = self.options.output_path + "/" + self.options.name + "/Train/images"
@@ -141,6 +142,8 @@ class SegmentationNetwork(object):
 
             if epoch > self.options.n_epochs:
                 self.model.update_learning_rate()
+        self.writer.export_scalars_to_json(os.path.join(self.log_dir, "all_scalars.json"))
+        self.writer.close()
 
     def predict_to_dir(self, n_predicts=0):
         """

@@ -7,10 +7,13 @@ from network import NetworkBench
 from image_handler import ImageHandler
 import os
 import numpy as np
+from PIL import Image
+import torchvision.transforms as transforms
+
 
 import time
 
-from correspondence_data_loader import CorrespondenceDataLoader, CorrespondenceDataLoaderDontCare
+from correspondence_data_loader import CorrespondenceDataLoader
 
 
 class SegmentationNetwork(object):
@@ -34,18 +37,15 @@ class SegmentationNetwork(object):
                                   model_path=os.path.join(options.model_path, options.name),
                                   name=options.name,
                                   gpu_ids=gpu_ids,
-                                  dont_care=options.dont_care,
                                   gan=options.gan,
                                   pool_size=options.pool_size,
                                   lambda_gan=options.lambda_gan,
                                   n_blocks_discr=options.n_blocks_discr)
 
         self.model.cuda()
-
-        self.dont_care = options.dont_care
         self.gan = options.gan
 
-        self.data_sets = CorrespondenceDataLoaderDontCare(options).load_data()
+        self.data_sets = CorrespondenceDataLoader(options).load_data()
         self.image_handler = ImageHandler()
         self.loss_dir = self.options.output_path + "/" + self.options.name + "/Train"
         copyfile(os.path.relpath('seg_config.yaml'), os.path.join(self.options.model_path, self.options.name, 'seg_config.yaml'))
@@ -85,18 +85,14 @@ class SegmentationNetwork(object):
             for i in range(len(self.data_sets[0])):
                 iter_start_time = time.time()
 
-                current_batch_imgs, current_batch_labels, dont_care_masks = [], [], []
+                current_batch_imgs, current_batch_labels = [], []
 
                 for iterator in data_iters:
                     data = iterator.__next__()
                     current_batch_imgs.append(data['img'])
                     current_batch_labels.append(data['label'])
-                    if self.dont_care:
-                        dont_care_masks.append(data['dont_care'])
-                    else:
-                        dont_care_masks = None
 
-                self.model.set_inputs(current_batch_imgs, current_batch_labels, dont_care_masks)
+                self.model.set_inputs(current_batch_imgs, current_batch_labels)
 
                 self.model.optimize()
 
@@ -172,32 +168,42 @@ class SegmentationNetwork(object):
 
         print("Finished Prediction")
 
-    def predict(self, n_predicts=0):
+    def predict(self, images: list):
 
         print("Started Prediction")
 
         predictions = []
-        save_names = []
 
-        if not n_predicts:
-            n_predicts = max([len(dataset) for dataset in self.data_sets])
+        if self.options.input_nc == 3:
+            norm = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        elif self.options.input_nc == 1:
+            norm = transforms.Normalize([0], [1])
+        else:
+            raise(RuntimeError('input_nc not supported'))
 
-        for i, data in enumerate(self.data_sets[0]):
-            self.model.set_inputs([data['img'] for x in range(self.options.n_networks)])
+        input_transform = transforms.Compose([
+            transforms.ToTensor(),
+            norm])
+
+        for i, img in enumerate(images):
+            if isinstance(img, Image.Image):
+                img = img.resize((self.options.image_width, self.options.image_height))
+            elif isinstance(img, np.ndarray):
+                img = Image.fromarray(img)
+                img = img.resize((self.options.image_width, self.options.image_height))
+            else:
+                raise(RuntimeError('image type not supported'))
+
+            _img = input_transform(img).unsqueeze(0)
+            self.model.set_inputs([_img for x in range(self.options.n_networks)])
             predicted_mask = self.model.predict()
-            save_name = (os.path.split(data['path_img'][0])[-1]).rsplit('.', 1)[0] + '_pred'
-            save_names.append(save_name)
-
             predictions.append(predicted_mask)
 
             if ((i + 1) % 10) == 0:
-                print("Predicted %d of %d Images" % (i+1, n_predicts))
-
-            if (i + 1) >= n_predicts:
-                break
+                print("Predicted %d of %d Images" % (i+1, len(images)))
 
         print("Finished Prediction")
-        return predictions, save_names
+        return predictions
 
     def get_annotation_suggestions(self, n_predicts=0, n_samples=100):
 

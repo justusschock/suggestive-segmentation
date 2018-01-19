@@ -2,96 +2,15 @@ import torch
 from torch.nn import NLLLoss2d
 
 
-class FBetaScore(torch.nn.Module):
-    def __init__(self, beta, threshold=0.5, eps=1e-9):
-        super(FBetaScore, self).__init__()
-        self.beta = beta
-        self.threshold = threshold
-        self.eps = eps
-
-    def forward(self, prediction, target):
-        beta2 = self.beta**2
-
-        y_pred = torch.ge(prediction.float(), self.threshold).float()
-        y_true = target.float()
-
-        true_positive = (y_pred * y_true).sum(dim=1)
-        precision = true_positive.div(y_pred.sum(dim=1).add(self.eps))
-        recall = true_positive.div(y_true.sum(dim=1).add(self.eps))
-
-        return torch.mean((precision*recall).div(precision.mul(beta2) + recall + self.eps).mul(1 + beta2))
-
-
-class FBetaLoss(torch.nn.Module):
-    def __init__(self, beta, threshold=0.5, eps=1e-9):
-        super(FBetaLoss, self).__init__()
-        self.beta = beta
-        self.threshold = threshold
-        self.eps = eps
-        self.score_calc = FBetaScore(beta, threshold, eps)
-
-    def forward(self, prediction, target):
-        return 1-self.score_calc(prediction, target)
-
-
-class SelectiveCrossEntropyLoss(torch.nn.Module):
-    def __init__(self):
-        super(SelectiveCrossEntropyLoss, self).__init__()
-        self.min = 1e-6
-        self.max = 1-self.min
-
-    def forward(self, prediction, target):
-        t = target.float()
-        p = torch.clamp(prediction, min=self.min, max=self.max)
-        weights = torch.clamp(torch.sum(t, 1), min=.0, max=1.)
-        cce_pos = torch.sum(t*torch.log(p), 1)
-        cce_neg = torch.sum((1-t)*torch.log(1.-p), 1)
-        cce = - (cce_pos + cce_neg)
-        return torch.sum(cce*weights) / torch.clamp(torch.sum(weights), min=1.)
-
-
-class BinarySelectiveCrossEntropyLoss(torch.nn.Module):
-    def __init__(self):
-        super(BinarySelectiveCrossEntropyLoss, self).__init__()
-        self.min = 1e-6
-        self.max = 1-self.min
-
-    def forward(self, prediction, target, weights=None):
-        if weights is None:
-            weights = torch.Tensor(target.data.size()).type_as(target.data).zero_()
-            weights = 1 - weights
-
-        if torch.is_tensor(weights):
-            weights = torch.autograd.Variable(weights)
-
-        t = target.float()
-        p = torch.clamp(prediction, min=self.min, max=self.max)
-        # weights = torch.clamp(torch.sum(t, 1), min=.0, max=1.)
-        cce_pos = torch.sum(t*torch.log(p), 1)
-        cce_neg = torch.sum((1-t)*torch.log(1.-p), 1)
-        cce = - (cce_pos + cce_neg)
-        return torch.sum(cce*weights) / torch.clamp(torch.sum(weights), min=1.)
-
-
 class BCELoss2d(torch.nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(BCELoss2d, self).__init__()
         self.bce_loss = torch.nn.BCELoss(weight, size_average)
 
-    def forward(self, logits, targets, dont_care_mask=None):
-        logits_clone = logits.clone()
-        targets_clone = targets.clone()
-        if dont_care_mask is not None:
-            dont_care_mask = (1-dont_care_mask).byte()
-            targets_data = torch.Tensor(targets.data.size()).zero_().type_as(targets.data)
-            logits_data = torch.Tensor(logits.data.size()).zero_().type_as(logits.data)
-            targets_data.masked_scatter_(dont_care_mask, targets.data)
-            logits_data.masked_scatter_(dont_care_mask, logits.data)
-            logits_clone.data = logits_data
-            targets_clone.data = targets_data
+    def forward(self, logits, targets):
 
-        probs_flat = logits_clone.view(-1)
-        targets_flat = targets_clone.view(-1)
+        probs_flat = logits.view(-1)
+        targets_flat = targets.view(-1)
 
         return self.bce_loss(probs_flat, targets_flat)
 

@@ -1,5 +1,5 @@
 train:
-  name: UNET_Ears_480_5_block_gen_3_block_total_segmented_augmented
+  name: UNET_Dont_Care_GAN_Unsupervised_Test
   load_network: False
   phase_test: False
   load_epoch: 0
@@ -10,23 +10,24 @@ train:
   n_networks: 1
   initial_filters: 96
   dropout_value: 0
-  dont_care: False
+  dont_care: True
   lr: 0.001
   decay: 0.001
   decay_epochs: 50
   batch_size: 1
   image_width: 480
   image_height: 480
-  gan: False
+  gan: True
   pool_size: 50
   lambda_gan: 1
   n_blocks_discr: 3
-  dataroot: [/home/temp/schock/MGS/Ears/Total_Segmented_Augmented]
+  dataroot: [/home/temp/schock/MGS/Whole_Mouse/GAN-Trainset/Generator_Augmented]
+  discr_root: [/home/temp/schock/MGS/Whole_Mouse/GAN-Trainset/Discriminator_Augmented]
   output_path: /home/temp/schock/MGS/Suggestive_Segmentation/Outputs
   model_path: /home/temp/schock/MGS/Suggestive_Segmentation/Models
   test_path: /home/temp/schock/MGS/Subsets/50Pixels_v3/Subset_3
   n_epochs: 0
-  steps_per_epoch: 5000
-  print_freq: 1000
+  steps_per_epoch: 250
+  print_freq: 50
   save_freq: 1
   save_img_freq: 1

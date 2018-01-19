@@ -54,10 +54,6 @@ def get_corresponding_path_dont_care(img_path, label_root_path):
     return os.path.join(label_root_path, label_name)
 
 
-def get_corresponding_path_multi(img_path, label_root_path):
-    return os.path.join(label_root_path, os.path.split(img_path)[-1])
-
-
 def default_loader(path, n_channels, height, width):
     img = Image.open(path)
 
@@ -68,27 +64,6 @@ def default_loader(path, n_channels, height, width):
         img = img.convert('RGB')
 
     return img.resize((width, height), Image.BILINEAR)
-
-
-def default_label_loader_multi(path, n_channels, height, width):
-    eye_label = Image.open(path.replace('.png', '_eye.png'))
-    ear_label = Image.open(path.replace('.png', '_ear.png'))
-    whole_label = Image.open(path.replace('.png', '_whole.png'))
-
-    if n_channels == 1:
-        mode = 'L'
-    else:
-        mode = 'RGB'
-
-    eye_label = eye_label.convert(mode)
-    ear_label = ear_label.convert(mode)
-    whole_label = whole_label.convert(mode)
-
-    eye_label = eye_label.resize((width, height), Image.BILINEAR)
-    ear_label = ear_label.resize((width, height), Image.BILINEAR)
-    whole_label = whole_label.resize((width, height), Image.BILINEAR)
-    mask = Image.merge('RGB', [eye_label, ear_label, whole_label])
-    return mask
 
 
 def default_label_loader_dont_care(path, n_channels, height, width):
@@ -128,23 +103,29 @@ def car_loader(path, n_channels):
 
 class ImageFolder(data.Dataset):
 
-    def __init__(self, root, n_channels, transform=None, return_paths=False,
-                 loader=car_loader):
-        imgs = make_dataset(root)
-        if len(imgs) == 0:
+    def __init__(self, root, n_channels, height=512, width=512, transform=None, return_paths=False,
+                 loader=default_loader, path_mapper=get_corresponding_path):
+        img_names = make_dataset(root)
+        if len(img_names) == 0:
             raise(RuntimeError("Found 0 images in: " + root + "\n"
                                                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
 
         self.root = root
-        self.imgs = imgs
+        self.img_names = img_names
         self.transform = transform
         self.return_paths = return_paths
         self.loader = loader
         self.n_channels = n_channels
+        self.height = height
+        self.width = width
+        self.path_mapper = path_mapper
 
     def __getitem__(self, index):
-        path = self.imgs[index]
-        img = self.loader(path, self.n_channels)
+        path = self.img_names[index]
+        if self.path_mapper is not None:
+            path = self.path_mapper(path, self.root)
+
+        img = self.loader(path, self.n_channels, self.height, self.width)
         if self.transform is not None:
             img = self.transform(img)
         if self.return_paths:
@@ -153,7 +134,7 @@ class ImageFolder(data.Dataset):
             return img
 
     def __len__(self):
-        return len(self.imgs)
+        return len(self.img_names)
 
 
 class CorrespondenceImageFolder(data.Dataset):
@@ -278,64 +259,4 @@ class CorrespondenceImageFolderDontCare(data.Dataset):
     def __len__(self):
         return len(self.img_names)
 
-
-class CorrespondenceImageFolderMultiLabel(data.Dataset):
-
-    def __init__(self, root, input_nc, output_nc, height=512, width=512, input_transform=None, output_transform=None, return_labels=True, return_paths=False,
-                 dont_care=False, loader=default_loader, label_loader=default_label_loader_multi, path_mapper=get_corresponding_path):
-        img_names = make_dataset(root)
-        if len(img_names) == 0:
-            raise(RuntimeError("Found 0 images in: " + root + "\n"
-                                                              "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
-
-        self.root = root
-        self.img_names = img_names
-        self.return_labels = return_labels
-        self.input_transform = input_transform
-        self.output_transform = output_transform
-        self.return_paths = return_paths
-        self.loader = loader
-        self.input_nc = input_nc
-        self.output_nc = output_nc
-        self.label_loader = label_loader
-        self.height = height
-        self.width = width
-        self.dont_care = dont_care
-        self.path_mapper = path_mapper
-
-    def __getitem__(self, index):
-
-        path = self.img_names[index]
-        img_pil = self.loader(path, self.input_nc, self.height, self.width)
-        if self.input_transform is not None:
-            img = self.input_transform(img_pil)
-        else:
-            img = img_pil
-
-        data_dict = {'img': img}
-
-        if self.return_labels:
-            path_label = self.path_mapper(path, self.root)
-            if self.dont_care:
-                label_pil = self.label_loader(path_label, self.output_nc, self.height, self.width)
-            else:
-                label_pil = self.label_loader(path_label, self.output_nc, self.height, self.width)
-            if self.output_transform is not None:
-                label = self.output_transform(label_pil)
-
-            else:
-                label = label_pil
-
-            data_dict['label'] = label
-
-        if self.return_paths:
-            data_dict['path_img'] = path
-
-            if self.return_labels:
-                data_dict['path_label'] = path_label
-
-        return data_dict
-
-    def __len__(self):
-        return len(self.img_names)
 

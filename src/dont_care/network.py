@@ -38,8 +38,10 @@ class Network(torch.nn.Module):
         self.input_gt = None
         self.var_img = None
         self.var_gt = None
+        self.var_discr = None
         self.fake_mask = None
         self.dont_care_mask = None
+        self.discriminator_img = None
 
         self.criterion_seg = None
         self.criterion_gan = None
@@ -78,6 +80,7 @@ class Network(torch.nn.Module):
 
         self.input_img = self.tensor(batch_size, n_input_channels, image_height, image_width)
         self.input_gt = self.tensor(batch_size, n_output_channels, image_height, image_width)
+
         if dont_care:
             self.dont_care_mask = self.tensor(batch_size, n_output_channels, image_height, image_width)
 
@@ -86,6 +89,7 @@ class Network(torch.nn.Module):
         if gan:
             self.discriminator = ImageDiscriminatorConv(n_output_channels, initial_filters, dropout_value,
                                                         gpu_ids=gpu_ids, n_blocks=n_blocks_discr)
+            self.discriminator_img = self.tensor(batch_size, n_output_channels, image_height, image_width)
             self.criterion_gan = GANLoss(tensor=self.tensor)
             self.optimizer_dis = torch.optim.Adam(self.discriminator.parameters(), lr=lr, betas=(0.5, 0.999))
             self.fake_mask_pool = ImagePool(pool_size)
@@ -104,7 +108,7 @@ class Network(torch.nn.Module):
             self.print_network(self.discriminator)
         print('-----------------------------------------------')
 
-    def set_input(self, input_img, input_gt=None, dont_care_mask=None):
+    def set_input(self, input_img, input_gt=None, dont_care_mask=None, discriminator_img=None):
 
         if input_img is not None:
             self.input_img.resize_(input_img.size()).copy_(input_img)
@@ -115,6 +119,14 @@ class Network(torch.nn.Module):
         if dont_care_mask is not None:
             self.dont_care_mask.resize_(dont_care_mask.size()).copy_(dont_care_mask)
 
+        if self.gan:
+
+            if discriminator_img is not None:
+                self.discriminator_img.resize_(discriminator_img.size()).copy_(discriminator_img)
+            else:
+                if input_gt is not None:
+                    self.discriminator_img.resize_(input_gt.size()).copy_(input_gt)
+
     def forward(self, vol=False):
         """
         Function to create autograd variables of inputs (necessary for back-propagation)
@@ -123,6 +135,7 @@ class Network(torch.nn.Module):
         """
         self.var_img = torch.autograd.Variable(self.input_img, volatile=vol)
         self.var_gt = torch.autograd.Variable(self.input_gt, volatile=vol)
+        self.var_discr = torch.autograd.Variable(self.discriminator_img, volatile=vol)
 
     def predict(self):
         """
@@ -159,7 +172,7 @@ class Network(torch.nn.Module):
 
     def backward_d(self):
         fake_mask = self.fake_mask_pool.query(self.fake_mask)
-        pred_real = self.discriminator.forward(self.var_gt)
+        pred_real = self.discriminator.forward(self.var_discr)
         loss_d_real = self.criterion_gan(input_tensor=pred_real, target_is_real=True)
         pred_fake = self.discriminator.forward(fake_mask.detach())
         loss_d_fake = self.criterion_gan(input_tensor=pred_fake, target_is_real=False)
@@ -295,29 +308,21 @@ class NetworkBench(torch.nn.Module):
         for model in self.models:
             model.cuda()
 
-    def set_inputs(self, input_imgs, input_gts=None, dont_care_masks=None):
+    def set_inputs(self, input_imgs, input_gts=None, dont_care_masks=None, discriminator_imgs=None):
         assert len(input_imgs) == self.n_networks
+        assert input_gts is None or len(input_gts) == self.n_networks
+        assert dont_care_masks is None or len(dont_care_masks) == self.n_networks
+        assert discriminator_imgs is None or len(discriminator_imgs) == self.n_networks
 
-        if input_gts is not None:
-            assert len(input_gts) == self.n_networks
+        if input_gts is None:
+            input_gts = [None for i in range(self.n_networks)]
+        if dont_care_masks is None:
+            dont_care_masks = [None for i in range(self.n_networks)]
+        if discriminator_imgs is None:
+            discriminator_imgs = [None for i in range(self.n_networks)]
 
-            if dont_care_masks is not None:
-                assert len(dont_care_masks) == self.n_networks
-
-                for idx, data in enumerate(list(zip(input_imgs, input_gts, dont_care_masks))):
-                    self.models[idx].set_input(data[0], data[1], data[2])
-            else:
-                for idx, data in enumerate(list(zip(input_imgs, input_gts))):
-                    self.models[idx].set_input(data[0], data[1], None)
-
-        else:
-            if dont_care_masks is not None:
-                assert len(dont_care_masks) == self.n_networks
-                for idx, data in enumerate(list(zip(input_imgs, dont_care_masks))):
-                    self.models[idx].set_input(data[0], None, data[1])
-            else:
-                for idx, img in enumerate(input_imgs):
-                    self.models[idx].set_input(img, None, None)
+        for idx, data in enumerate(list(zip(input_imgs, input_gts, dont_care_masks, discriminator_imgs))):
+            self.models[idx].set_input(data[0], data[1], data[2], data[3])
 
     def forward(self, vol=False):
         for model in self.models:

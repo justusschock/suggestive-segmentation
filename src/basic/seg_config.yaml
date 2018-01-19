@@ -1,9 +1,9 @@
 train:
   name: UNET_Ears_480_5_block_gen_3_block_total_segmented_augmented
-  load_network: False
-  phase_test: False
-  load_epoch: 0
-  shuffle: True
+  load_network: True
+  phase_test: True
+  load_epoch: 50
+  shuffle: False
   input_nc: 3
   output_nc: 1
   n_blocks: 5
@@ -21,10 +21,10 @@ train:
   pool_size: 50
   lambda_gan: 1
   n_blocks_discr: 3
-  dataroot: [/home/temp/schock/MGS/Ears/Total_Segmented_Augmented]
+  dataroot: [/home/temp/schock/MGS/Eyes/Segmented_quarter_no_eyes_Augmented]
   output_path: /home/temp/schock/MGS/Suggestive_Segmentation/Outputs
   model_path: /home/temp/schock/MGS/Suggestive_Segmentation/Models
-  test_path: /home/temp/schock/MGS/Subsets/50Pixels_v3/Subset_3
+  test_path: /home/temp/schock/MGS/Subsets/Combined_Predictions
   n_epochs: 0
   steps_per_epoch: 5000
   print_freq: 1000
