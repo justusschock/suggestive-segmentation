@@ -7,14 +7,12 @@ from network import NetworkBench
 from image_handler import ImageHandler
 import os
 import numpy as np
-from PIL import Image
-import torchvision.transforms as transforms
-
 
 import time
 
 from correspondence_data_loader import CorrespondenceDataLoader
 
+from tensorboardX import SummaryWriter
 
 class SegmentationNetwork(object):
 
@@ -43,12 +41,17 @@ class SegmentationNetwork(object):
                                   n_blocks_discr=options.n_blocks_discr)
 
         self.model.cuda()
+
+        self.dont_care = options.dont_care
         self.gan = options.gan
+
+        print("Creating Data Loader and Indexing Data")
 
         self.data_sets = CorrespondenceDataLoader(options).load_data()
         self.image_handler = ImageHandler()
         self.loss_dir = self.options.output_path + "/" + self.options.name + "/Train"
         copyfile(os.path.relpath('seg_config.yaml'), os.path.join(self.options.model_path, self.options.name, 'seg_config.yaml'))
+        self.writer = SummaryWriter(self.loss_dir)
 
     def train(self):
         """
@@ -80,19 +83,37 @@ class SegmentationNetwork(object):
             # Get Iteraters for each dataset
             data_iters = []
             for loader in self.data_sets:
-                data_iters.append(loader.__iter__())
+                data_iters.append(iter(loader))
+
+            discr_data_iters = []
+            if self.gan:
+                for loader in self.discriminator_datasets:
+                    discr_data_iters.append(iter(loader))
 
             for i in range(len(self.data_sets[0])):
                 iter_start_time = time.time()
 
-                current_batch_imgs, current_batch_labels = [], []
+                current_batch_imgs, current_batch_labels, dont_care_masks, discriminator_imgs = [], [], [], []
 
                 for iterator in data_iters:
-                    data = iterator.__next__()
+                    data = next(iterator)
                     current_batch_imgs.append(data['img'])
                     current_batch_labels.append(data['label'])
+                    if self.dont_care:
+                        dont_care_masks.append(data['dont_care'])
+                    else:
+                        dont_care_masks = None
+                if self.gan:
+                    for idx, iterator in enumerate(discr_data_iters):
+                        try:
+                            discriminator_imgs.append(next(iterator))
+                        except StopIteration:
+                            discr_data_iters[idx] = iter(self.discriminator_datasets[idx])
+                            discriminator_imgs.append(next(discr_data_iters[idx]))
 
-                self.model.set_inputs(current_batch_imgs, current_batch_labels)
+                        self.model.set_inputs(current_batch_imgs, current_batch_labels, dont_care_masks, discriminator_imgs)
+                else:
+                    self.model.set_inputs(current_batch_imgs, current_batch_labels)
 
                 self.model.optimize()
 
@@ -100,15 +121,18 @@ class SegmentationNetwork(object):
                     errors = self.model.get_current_errors()
                     t = (time.time() - iter_start_time)
 
+                    # with open(loss_file, 'a+') as f:
+                    #     f.write(message + "\n")
+
                     message = '(epoch: %d, step: %d, time/step: %.3f)\n' % (epoch, steps + 1, t)
                     for k, v in errors.items():
-                        message += '%s:%.3f' % (k, float(v))
+                        message += '%s: %.3f, ' % (k, float(v))
 
                     if not os.path.isdir(str(self.loss_dir)):
                         os.makedirs(str(self.loss_dir))
 
-                    with open(loss_file, 'a+') as f:
-                        f.write(message + "\n")
+                    for k, v in errors.items():
+                        self.writer.add_scalar('Model %d/%s' % (float(k.split("_")[-1]), k.split("_")[0]), float(v), (epoch-1)*self.options.steps_per_epoch + steps)
 
                     print(message)
                     # self.plot_losses(loss_file)
@@ -128,6 +152,9 @@ class SegmentationNetwork(object):
                     self.image_handler.save_image(images['img'], output_dir, 'epoch_%03d_real_img_model_%d' % (epoch, idx))
                     self.image_handler.save_mask(images['mask'], output_dir, 'epoch_%03d_fake_mask_model_%d' % (epoch, idx))
                     self.image_handler.save_mask(images['gt'], output_dir, 'epoch_%03d_gt_model_%d' % (epoch, idx))
+                    # self.writer.add_image("Real Images", images['img'].data, (epoch-1)*self.options.steps_per_epoch + steps)
+                    # self.writer.add_image("fake Masks", images['mask'].data, (epoch-1)*self.options.steps_per_epoch + steps)
+                    # self.writer.add_image("Groundtruth Masks", images['gt'].data, (epoch-1)*self.options.steps_per_epoch + steps)
 
                 self.create_html_file(epoch)
 
@@ -168,42 +195,32 @@ class SegmentationNetwork(object):
 
         print("Finished Prediction")
 
-    def predict(self, images: list):
+    def predict(self, n_predicts=0):
 
         print("Started Prediction")
 
         predictions = []
+        save_names = []
 
-        if self.options.input_nc == 3:
-            norm = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        elif self.options.input_nc == 1:
-            norm = transforms.Normalize([0], [1])
-        else:
-            raise(RuntimeError('input_nc not supported'))
+        if not n_predicts:
+            n_predicts = max([len(dataset) for dataset in self.data_sets])
 
-        input_transform = transforms.Compose([
-            transforms.ToTensor(),
-            norm])
-
-        for i, img in enumerate(images):
-            if isinstance(img, Image.Image):
-                img = img.resize((self.options.image_width, self.options.image_height))
-            elif isinstance(img, np.ndarray):
-                img = Image.fromarray(img)
-                img = img.resize((self.options.image_width, self.options.image_height))
-            else:
-                raise(RuntimeError('image type not supported'))
-
-            _img = input_transform(img).unsqueeze(0)
-            self.model.set_inputs([_img for x in range(self.options.n_networks)])
+        for i, data in enumerate(self.data_sets[0]):
+            self.model.set_inputs([data['img'] for x in range(self.options.n_networks)])
             predicted_mask = self.model.predict()
+            save_name = (os.path.split(data['path_img'][0])[-1]).rsplit('.', 1)[0] + '_pred'
+            save_names.append(save_name)
+
             predictions.append(predicted_mask)
 
             if ((i + 1) % 10) == 0:
-                print("Predicted %d of %d Images" % (i+1, len(images)))
+                print("Predicted %d of %d Images" % (i+1, n_predicts))
+
+            if (i + 1) >= n_predicts:
+                break
 
         print("Finished Prediction")
-        return predictions
+        return predictions, save_names
 
     def get_annotation_suggestions(self, n_predicts=0, n_samples=100):
 

@@ -1,7 +1,7 @@
 import os
 import sys
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '4'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
 import matplotlib
 matplotlib.use('Agg')
@@ -24,9 +24,9 @@ if __name__ == '__main__':
 
     model = SegmentationNetwork(options=options, gpu_ids=gpu_ids)
 
-    img1 = Image.open("/home/temp/schock/MGS/Eyes/Images/W2_MGS_MVI_0297_4.png")
-    img2 = Image.open("/home/temp/schock/MGS/Eyes/Images/W2_MGS_MVI_0297_18.png")
-    imgs = [img1, img2]
-    preds = model.predict(imgs)
+    # img1 = Image.open("/home/temp/schock/MGS/Eyes/Images/W2_MGS_MVI_0297_4.png")
+    # img2 = Image.open("/home/temp/schock/MGS/Eyes/Images/W2_MGS_MVI_0297_18.png")
+    # imgs = [img1, img2]
+    # preds = model.predict(imgs)
     model.train()
     model.predict_to_dir(0)

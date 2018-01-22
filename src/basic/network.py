@@ -8,8 +8,7 @@ from u_net import UNet, UNetV2
 from discriminator import ImageDiscriminatorConv, ImageDiscriminator
 from image_pool import ImagePool
 
-from losses import GANLoss, BCELoss2d
-
+from losses import GANLoss, BCELoss2d, MSELoss
 
 class Network(torch.nn.Module):
     def __init__(self, n_input_channels=3, n_output_channels=1, n_blocks=9, initial_filters=64, dropout_value=0.25,
@@ -77,7 +76,7 @@ class Network(torch.nn.Module):
         self.input_img = self.tensor(batch_size, n_input_channels, image_height, image_width)
         self.input_gt = self.tensor(batch_size, n_output_channels, image_height, image_width)
 
-        self.generator = UNet(n_input_channels, n_output_channels, n_blocks, initial_filters, dropout_value, gpu_ids)
+        self.generator = UNetV2(n_input_channels, n_output_channels, n_blocks, initial_filters, gpu_ids=gpu_ids)
 
         if gan:
             self.discriminator = ImageDiscriminatorConv(n_output_channels, initial_filters, dropout_value,

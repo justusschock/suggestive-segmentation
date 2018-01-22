@@ -60,7 +60,7 @@ class CorrespondenceDataLoader(object):
             self.data_loader.append(torch.utils.data.DataLoader(dataset,
                                                                 batch_size=opt.batch_size,
                                                                 shuffle=opt.shuffle,
-                                                                num_workers=0))
+                                                                num_workers=4))
 
     def name(self):
         return 'CorrespondenceDataLoader'

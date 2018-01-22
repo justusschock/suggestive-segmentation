@@ -6,7 +6,7 @@ from blocks import UnetSkipConnectionBlock
 
 class UNet(torch.nn.Module):
     """class containing a generic generator implementation"""
-    def __init__(self, n_input_channels=3, n_output_channels=1, n_blocks=9, initial_filters=64, dropout_value=0.25,
+    def __init__(self, n_input_channels=3, n_output_channels=1, n_blocks=9, initial_filters=64, dropout_value=0.0,
                  gpu_ids=[]
                  ):
         """
@@ -197,9 +197,10 @@ class UNetV2(nn.Module):
         the tranpose convolution (specified by upmode='transpose')
     """
 
-    def __init__(self, num_classes, in_channels=3, depth=5,
+    def __init__(self, in_channels=3, out_channels=3, depth=5,
                  start_filts=64, up_mode='transpose',
-                 merge_mode='concat'):
+                 merge_mode='concat', gpu_ids=[]):
+
         """
         Arguments:
             in_channels: int, number of channels in the input tensor.
@@ -211,7 +212,7 @@ class UNetV2(nn.Module):
                 for transpose convolution or 'upsample' for nearest neighbour
                 upsampling.
         """
-        super(UNet, self).__init__()
+        super(UNetV2, self).__init__()
 
         if up_mode in ('transpose', 'upsample'):
             self.up_mode = up_mode
@@ -236,11 +237,11 @@ class UNetV2(nn.Module):
                              "nearest neighbour to reduce "
                              "depth channels (by half).")
 
-        self.num_classes = num_classes
+        self.out_channels = out_channels
         self.in_channels = in_channels
         self.start_filts = start_filts
         self.depth = depth
-
+        self.sigm = torch.nn.Sigmoid()
         self.down_convs = []
         self.up_convs = []
 
@@ -262,13 +263,15 @@ class UNetV2(nn.Module):
                              merge_mode=merge_mode)
             self.up_convs.append(up_conv)
 
-        self.conv_final = conv1x1(outs, self.num_classes)
+        self.conv_final = conv1x1(outs, self.out_channels)
 
         # add the list of modules to current module
         self.down_convs = nn.ModuleList(self.down_convs)
         self.up_convs = nn.ModuleList(self.up_convs)
 
         self.reset_params()
+
+        self.cuda()
 
     @staticmethod
     def weight_init(m):
@@ -296,4 +299,4 @@ class UNetV2(nn.Module):
         # nn.CrossEntropyLoss is your training script,
         # as this module includes a softmax already.
         x = self.conv_final(x)
-        return x
+        return self.sigm(x)

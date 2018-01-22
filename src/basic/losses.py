@@ -1,5 +1,5 @@
 import torch
-from torch.nn import NLLLoss2d
+from torch.nn import NLLLoss2d, MSELoss
 
 
 class BCELoss2d(torch.nn.Module):
