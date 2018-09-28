@@ -1,6 +1,9 @@
 # Suggestive Segmentation
 
-Requirements: 
+## Content
+This repository contains an early stage of suggestive segmentation using a u-net. It has been abandoned in favor of more accurate segmentation approaches.
+
+## Requirements: 
 * python 3.5
 * pytorch v 0.2
 * torchvision v 0.1.9
